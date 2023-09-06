@@ -1,13 +1,14 @@
 import axios from 'axios';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
-import { FlatList, Image, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { FlatList, Image, RefreshControl, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { BellIcon, MagnifyingGlassIcon } from 'react-native-heroicons/outline';
 import { heightPercentageToDP as hp } from 'react-native-responsive-screen';
 import Categories from '../components/Categories';
 import Loader from '../components/Loader';
 import Recipes from '../components/Recipes';
 import { useNavigation } from '@react-navigation/native';
+import Animated from 'react-native-reanimated';
 
 const HomeScreen = () => {
 
@@ -18,8 +19,10 @@ const HomeScreen = () => {
     const [meals, setMeals] = useState([]);
     const [query, setQuery] = useState("");
     const [filteredMeals, setFilteredMeals] = useState([]);
+    const [showResults, setShowResults] = useState(false);
     const [loading, setLoading] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         getCateories();
@@ -47,7 +50,7 @@ const HomeScreen = () => {
             const response = await axios.get(`https://themealdb.com/api/json/v1/1/filter.php?c=${category}`);
             if (response && response.data) {
                 setMeals(response.data.meals);
-                setFilteredMeals(response.data.meals);
+                // setFilteredMeals(response.data.meals);
             }
 
         } catch (err) {
@@ -57,18 +60,23 @@ const HomeScreen = () => {
         }
     };
 
-    const handleSearch = (text) => {
+    const handleSearch = async () => {
         setLoading(true);
-        setQuery(text);
+        setShowResults(false);
 
-        const filtered = meals.filter((meal) => {
-            const words = text.toLowerCase().split(' ');
-            return words.some((word) => meal.strMeal.toLowerCase().trim().includes(word));
-        });
-
-        setFilteredMeals(filtered);
-        setLoading(false);
+        try {
+            const response = await axios.get(`https://themealdb.com/api/json/v1/1/search.php?s=${query}`);
+            if (response && response.data) {
+                setFilteredMeals(response.data.meals);
+                setShowResults(true);
+            }
+        } catch (err) {
+            console.log('error: ', err.message);
+        } finally {
+            setLoading(false);
+        }
     };
+
 
     const handleCategoryChange = (category) => {
         getRecipes(category);
@@ -76,7 +84,11 @@ const HomeScreen = () => {
         setMeals([]);
     };
 
-
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        await getRecipes(activeCategory || "Beef");
+        setRefreshing(false);
+    }, []);
 
     return (
         <View className="flex-1 bg-white">
@@ -85,6 +97,7 @@ const HomeScreen = () => {
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={{ paddingBottom: 50 }}
                 className="space-y-6 pt-14"
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} style={{ marginTop: hp(10) }} />}
             >
                 {/* Header */}
                 <View className="flex-row items-center justify-between mx-4 mb-2">
@@ -118,19 +131,22 @@ const HomeScreen = () => {
                         placeholderTextColor="gray"
                         style={{ fontSize: hp(1.9), flex: 1 }}
                         value={query}
-                        onChangeText={(text) => handleSearch(text)}
+                        onChangeText={(text) => setQuery(text)}
                         className="flex-1 pl-4 text-base tracking-wider"
                     />
-                    <View className="p-3 bg-white rounded-full">
-                        <MagnifyingGlassIcon color="gray" size={hp(2.5)} strokeWidth={3} />
-                    </View>
+                    <TouchableOpacity
+                        className="p-3 bg-amber-400 rounded-full"
+                        onPress={handleSearch}
+                    >
+                        <MagnifyingGlassIcon color="#fff" size={hp(2.5)} strokeWidth={3} />
+                    </TouchableOpacity>
                 </View>
 
                 {/* Search Results */}
-                {query && (
+                {query && showResults && (
                     <View className="w-full my-4">
                         {loading && (
-                            <Loader size="large" className="mt-12" />
+                            <Loader size="large" className="mt-12" color="#fcd34d" />
                         )}
                         <FlatList
                             horizontal={true}
@@ -142,7 +158,11 @@ const HomeScreen = () => {
                                     onPress={() => navigation.navigate('RecipeDetails', { ...item })}
                                     className="flex flex-col items-center justify-center gap-y-2"
                                 >
-                                    <Image source={{ uri: item.strMealThumb }} style={{ width: 100, height: 100, borderRadius: 24 }} />
+                                    <Animated.Image
+                                        source={{ uri: item.strMealThumb }}
+                                        style={{ width: 100, height: 100, borderRadius: 24 }}
+                                        sharedTransitionTag={item.strMeal}
+                                    />
                                     <Text
                                         style={{ fontSize: hp(1.8) }}
                                         className="ml-2 font-medium text-neutral-600"
@@ -163,7 +183,7 @@ const HomeScreen = () => {
                 )}
 
                 {/* Categories */}
-                {query ? null : (
+                {query && showResults ? null : (
                     <View className={query ? "" : "space-y-6"}>
                         <View>
                             <Categories
@@ -173,7 +193,7 @@ const HomeScreen = () => {
                             />
                             {categories?.length === 0 && (
                                 <View className="flex-row items-center justify-center my-4">
-                                    <Loader size="large" className="mt-4" />
+                                    <Loader size="large" className="mt-4" color="#fcd34d" />
                                 </View>
                             )}
                         </View>
